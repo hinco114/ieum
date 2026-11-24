@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "ieum": {
+      "command": "python3",
+      "args": [
+        "${PLUGIN_ROOT}/ieum.py",
+        "mcp"
+      ]
+    }
+  }
+}

@@ -1,0 +1,20 @@
+{
+  "name": "ieum",
+  "interface": {
+    "displayName": "이음"
+  },
+  "plugins": [
+    {
+      "name": "ieum",
+      "source": {
+        "source": "local",
+        "path": "./plugins/ieum"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Productivity"
+    }
+  ]
+}

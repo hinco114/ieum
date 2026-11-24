@@ -1,0 +1,13 @@
+{
+  "name": "ieum",
+  "owner": {
+    "name": "이음"
+  },
+  "plugins": [
+    {
+      "name": "ieum",
+      "source": "./plugins/ieum",
+      "description": "여러 AI에서 공유하는 로컬 기억과 프로젝트 상태"
+    }
+  ]
+}

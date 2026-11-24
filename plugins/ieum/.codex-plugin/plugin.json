@@ -1,0 +1,6 @@
+{
+  "name": "ieum",
+  "version": "0.2.0",
+  "description": "여러 AI에서 공유하는 로컬 기억과 프로젝트 상태",
+  "mcpServers": "./mcp_config.json"
+}
