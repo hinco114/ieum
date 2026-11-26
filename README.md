@@ -14,7 +14,11 @@ python3 ieum.py project_update 이음 '다음 작업은 검색 품질 검증'
 python3 ieum.py overview
 ```
 
-설정은 `~/.config/ieum/config.json`에 저장된다. 테스트 환경에서는 `IEUM_CONFIG`로 위치를 지정한다. 기억은 선택한 폴더의 `memory/ieum/`에 저장하고 기존 `wiki/`는 읽기만 한다. 선택한 폴더가 Git 저장소 루트이면 기억 파일을 커밋하며, 원격이 있으면 현재 브랜치의 기본 push 설정을 사용한다. 개인 데이터에 맞는 원격을 선택한다.
+설정은 `~/.config/ieum/config.json`에 저장된다. 테스트 환경에서는 `IEUM_CONFIG`로 위치를 지정한다. 기억은 선택한 폴더의 `memory/ieum/`에 저장하고 기존 `wiki/`는 읽기만 한다.
+
+기억 폴더가 Git 작업 트리에 있으면 `remember`와 `project_update`가 `memory/ieum/`에 남아 있는 모든 Git 변경을 커밋한다. 원격이 설정돼 있으면 현재 브랜치의 기본 push 설정을 사용한다. 추적 중인 원격 브랜치에 새 커밋이 있으면 Git 2.38 이상에서 충돌 여부를 확인하고, 안전하게 병합할 수 있을 때 반영한 뒤 push를 다시 시도한다.
+
+결과의 `sync` 필드에서 push가 완료됐는지 확인할 수 있다. 실패한 push를 다시 시도하거나 직접 편집한 기억 파일을 동기화하려면 `python3 ieum.py sync` 또는 플러그인의 `sync` 도구를 사용한다. 다음 기억 저장 때도 동기화를 다시 시도한다. 개인 데이터에 맞는 원격을 선택한다.
 
 ## 플러그인 설치
 

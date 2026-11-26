@@ -8,6 +8,7 @@ import re
 import subprocess
 import sys
 import tempfile
+from contextlib import ExitStack
 from datetime import datetime, timezone
 from uuid import uuid4
 
@@ -41,24 +42,86 @@ def setup(folder):
     return {"memory_root": str(root), "search_engine": recall_client.start(root, retry=True)}
 
 
-def git_sync(root, path):
-    def git(*args):
+def push_memory(git):
+    push_args = ("-c", "push.autoSetupRemote=true", "push", "--porcelain")
+    result = git(*push_args, check=False)
+    if result.returncode == 0:
+        return "push 완료"
+    rejected = [line for line in result.stdout.splitlines() if line.startswith("!\t")]
+    if len(rejected) != 1 or not rejected[0].endswith(("(fetch first)", "(non-fast-forward)")):
+        return "로컬 커밋 · push 대기"
+    branch = git("symbolic-ref", "HEAD").stdout.strip()
+    if not rejected[0].startswith(f"!\t{branch}:"):
+        return "로컬 커밋 · push 대기"
+
+    upstream = git("rev-parse", "--symbolic-full-name", "@{upstream}").stdout.strip()
+    push_ref = git("rev-parse", "--symbolic-full-name", "@{push}").stdout.strip()
+    if upstream != push_ref:
+        return "로컬 커밋 · push 대기"
+
+    git("fetch")
+    target = git("rev-parse", upstream).stdout.strip()
+    # Check for conflicts without modifying the index or work tree.
+    preflight = git("merge-tree", "--write-tree", "HEAD", target, check=False)
+    if preflight.returncode == 1:
+        return "로컬 커밋 · 원격 변경과 충돌"
+    if preflight.returncode:
+        return "로컬 커밋 · push 대기"
+    merge = git("merge", "--no-autostash", "--strategy=ort",
+                "-m", "chore(memory): 원격 변경 병합", target, check=False)
+    if merge.returncode:
+        return "로컬 커밋 · 원격 변경 반영 실패"
+
+    git(*push_args)
+    return "push 완료"
+
+
+def sync_memory(root, records, entry=None):
+    def git(*args, check=True):
         return subprocess.run(["git", "-C", str(root), *args], capture_output=True,
-                              text=True, timeout=25, env={**os.environ, "GIT_TERMINAL_PROMPT": "0"})
-    try:
-        top = git("rev-parse", "--show-toplevel")
-        if top.returncode or Path(top.stdout.strip()).resolve() != root:
-            return "로컬 저장"
-        rel = str(path.relative_to(root))
-        for args in [("add", "--", rel), ("commit", "--only", "-m", "이음 기억 갱신", "--", rel)]:
-            r = git(*args)
-            if r.returncode:
+                              text=True, check=check, timeout=25,
+                              env={**os.environ, "GIT_TERMINAL_PROMPT": "0", "LC_ALL": "C"})
+
+    git_errors = (OSError, subprocess.SubprocessError)
+    rel = str(records.relative_to(root))
+    path = records / (entry["id"] + ".json") if entry is not None else None
+    with ExitStack() as stack:
+        git_ready = False
+        status = "로컬 저장 · Git 작업 트리 없음"
+        try:
+            work_tree = git("rev-parse", "--is-inside-work-tree", check=False)
+            if work_tree.stdout.strip() == "true":
+                git_dir = Path(git("rev-parse", "--absolute-git-dir").stdout.strip())
+                gate = stack.enter_context((git_dir / "ieum-sync.lock").open("a+b"))
+                recall_client.lock(gate)
+                git_ready = True
+        except git_errors:
+            status = "로컬 저장 · Git 상태 확인 필요"
+
+        if path is not None:
+            save_json(path, entry)
+        if not git_ready:
+            return status
+
+        try:
+            if git("status", "--porcelain", "--untracked-files=all", "--", rel).stdout:
+                git("add", "-A", "--", rel)
+            if path is not None:
+                git("ls-files", "--error-unmatch", "--", str(path.relative_to(root)))
+            changes = git("diff", "--cached", "--quiet", "--", rel, check=False)
+            if changes.returncode == 1:
+                git("commit", "--only", "-m", "chore(memory): 이음 기억 갱신", "--", rel)
+            elif changes.returncode:
                 return "로컬 저장 · Git 상태 확인 필요"
-        if not git("remote").stdout.strip():
-            return "로컬 커밋"
-        return "push 완료" if git("push").returncode == 0 else "로컬 커밋 · push 대기"
-    except (OSError, subprocess.TimeoutExpired):
-        return "로컬 저장 · Git 상태 확인 필요"
+            if not git("remote").stdout.strip():
+                return "로컬 커밋 · Git 원격 없음"
+        except git_errors:
+            return "로컬 저장 · Git 상태 확인 필요"
+
+        try:
+            return push_memory(git)
+        except git_errors:
+            return "로컬 커밋 · push 대기"
 
 
 def run(action, args):
@@ -69,8 +132,10 @@ def run(action, args):
         if CONFIG.exists() and settings()["memory_root"] != str(folder.resolve()):
             raise ValueError("이미 설정된 경로를 변경하려면 CLI setup을 사용하세요.")
         return setup(str(folder))
-    root = Path(settings()["memory_root"])
+    root = Path(settings()["memory_root"]).resolve()
     records = root / "memory" / "ieum"
+    if action == "sync":
+        return {"sync": sync_memory(root, records)}
     if action in ("remember", "project_update"):
         body = args["text"].strip()
         project = args.get("project", "").strip()
@@ -78,9 +143,7 @@ def run(action, args):
             raise ValueError("내용과 프로젝트 상태에 필요한 프로젝트명을 입력하세요.")
         entry = {"id": uuid4().hex, "kind": action, "text": body, "project": project,
                  "source": args.get("source", ""), "time": datetime.now(timezone.utc).isoformat()}
-        path = records / (entry["id"] + ".json")
-        save_json(path, entry)
-        return {**entry, "sync": git_sync(root, path)}
+        return {**entry, "sync": sync_memory(root, records, entry)}
     if action == "search_status":
         return {"engine": recall_client.start(root), "log": str(recall_client.index_dir(root) / "setup.log")}
     if action == "search" and args["query"].strip() and recall_client.start(root) == "ready":
@@ -124,6 +187,7 @@ DEFS = {
     "search_status": ("검색 엔진의 준비 상태와 로그 경로를 확인한다.", [], []),
     "setup": ("사용자에게 기억 폴더를 물은 뒤 사용자가 선택한 절대 경로로 처음 설정한다.", ["folder"], []),
     "remember": ("사용자가 지정한 기억과 근거를 저장한다.", ["text"], ["project", "source"]),
+    "sync": ("기억 폴더의 변경을 커밋하고 미전송 커밋을 원격에 push한다.", [], []),
     "search": ("공용 기억과 위키를 한국어 키워드와 의미로 검색한다. 준비 중에는 키워드를 사용한다.", ["query"], []),
     "project_update": ("프로젝트의 최신 작업 상태를 기록한다.", ["project", "text"], ["source"]),
     "overview": ("프로젝트별 마지막 상태를 읽는다.", [], []),
@@ -146,7 +210,7 @@ def mcp():
                 versions = ("2025-11-25", "2025-06-18", "2025-03-26", "2024-11-05")
                 version = req.get("params", {}).get("protocolVersion")
                 result = {"protocolVersion": version if version in versions else versions[0],
-                          "capabilities": {"tools": {}}, "serverInfo": {"name": "ieum", "version": "0.2.0"}}
+                          "capabilities": {"tools": {}}, "serverInfo": {"name": "ieum", "version": "0.2.1"}}
             elif method == "tools/list":
                 result = {"tools": tools}
             elif method == "ping":
