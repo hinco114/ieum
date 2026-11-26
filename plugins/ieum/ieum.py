@@ -186,7 +186,7 @@ def run(action, args):
 DEFS = {
     "search_status": ("검색 엔진의 준비 상태와 로그 경로를 확인한다.", [], []),
     "setup": ("사용자에게 기억 폴더를 물은 뒤 사용자가 선택한 절대 경로로 처음 설정한다.", ["folder"], []),
-    "remember": ("사용자가 지정한 기억과 근거를 저장한다.", ["text"], ["project", "source"]),
+    "remember": ("기억과 근거를 저장한다. 일반 기억은 project를 생략한다.", ["text"], ["project", "source"]),
     "sync": ("기억 폴더의 변경을 커밋하고 미전송 커밋을 원격에 push한다.", [], []),
     "search": ("공용 기억과 위키를 한국어 키워드와 의미로 검색한다. 준비 중에는 키워드를 사용한다.", ["query"], []),
     "project_update": ("프로젝트의 최신 작업 상태를 기록한다.", ["project", "text"], ["source"]),
@@ -210,7 +210,7 @@ def mcp():
                 versions = ("2025-11-25", "2025-06-18", "2025-03-26", "2024-11-05")
                 version = req.get("params", {}).get("protocolVersion")
                 result = {"protocolVersion": version if version in versions else versions[0],
-                          "capabilities": {"tools": {}}, "serverInfo": {"name": "ieum", "version": "0.2.1"}}
+                          "capabilities": {"tools": {}}, "serverInfo": {"name": "ieum", "version": "0.2.2"}}
             elif method == "tools/list":
                 result = {"tools": tools}
             elif method == "ping":
